@@ -123,6 +123,27 @@ function mock(superagent) {
     return this;
   };
 
+  // Patch Request.query()
+  var oldSet = originalMethods.query = reqProto.query;
+  reqProto.query = function(key, val) {
+    var state = this._superagentMockerState;
+    if (!state || !state.current) {
+      return oldSet.call(this, key, val);
+    }
+    // Recursively query keys if passed an object
+    if (isObject(key)) {
+      for (var field in key) {
+        this.query(field, key[field]);
+      }
+      return this;
+    }
+    if (typeof key !== 'string') {
+      throw new TypeError('Query params must be strings.');
+    }
+    state.request.query[key.toLowerCase()] = val;
+    return this;
+  };
+
   // Patch Request.send()
   var oldSend = originalMethods.send = reqProto.send;
   reqProto.send = function(data) {
@@ -187,6 +208,7 @@ function patch(superagent, prop, method) {
       current: current,
       request: {
         headers: {},
+        query: {},
         body: {}
       },
     };
@@ -225,7 +247,8 @@ Route.prototype.match = function(method, url, body) {
       url: url,
       params: params || {},
       body: mergeObjects(body, req.body),
-      headers: req.headers
+      headers: req.headers,
+      query: req.query
     });
     return mergeObjects({
       status: 200
